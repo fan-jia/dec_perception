@@ -1,7 +1,21 @@
+#ifndef _gpml_rms_
+#define _gpml_rms_
+
 #include "gp.h"
 #include "gp_utils.h"
 
+//#include <Eigen/Dense>
+
+#include <iostream>
+#include <math.h>
+#include <numeric>
+#include <vector>
+#include <limits>
+#include <algorithm>
 #include <Eigen/Dense>
+#include <time.h>
+#include <stdlib.h>
+using namespace std;
 
 using namespace libgp;
 
@@ -77,3 +91,5 @@ void gpml_rms(Eigen::VectorXi ind_train, Eigen::MatrixXd Xs, Eigen::MatrixXd Fs,
     gp_compute(Xs_train, Fs_train_mtz, Xtest_new, mu, s2);
     mu = mu.array() + Fs_train.mean();
 }
+
+#endif

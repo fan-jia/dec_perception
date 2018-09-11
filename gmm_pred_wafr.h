@@ -1,7 +1,7 @@
 #ifndef _gmm_pred_wafr_
 #define _gmm_pred_wafr_
 
-
+#include "gpml_rms.h"
 #include "mixGaussEm_gmm.h"
 using namespace std;
 
@@ -29,6 +29,20 @@ Eigen::MatrixXd repmat(Eigen::VectorXd X, int n){
         Y.col(i) = X;
     }
     return Y;
+}
+
+Eigen::VectorXi get_label_idx(Eigen::VectorXi k, int iij){
+    vector<int> idx_vec;
+    for(int i = 0; i < k.size(); i++){
+        if(k(i) == iij){
+            idx_vec.push_back(i);
+        }
+    }
+    Eigen::VectorXi idx(idx_vec.size());
+    for(int i = 0; i < idx.size(); i ++){
+        idx(i) = idx_vec[i];
+    }
+    return idx;
 }
 
 Eigen::MatrixXd gt_pred(Eigen::MatrixXd Xs,Eigen::MatrixXd R, Eigen::MatrixXd X_test){
@@ -84,7 +98,7 @@ void gmm_pred_wafr(Eigen::MatrixXd Xtest, Eigen::MatrixXd Ftest, BOTS bot, GTDat
     bot.Nm_ind = sort_unique(bot.Nm_ind);
     bot.Fs = extract_rows(gt_data.Fss, bot.Nm_ind);
 
-    Eigen::VectorXd label(bot.Fs.rows());//10 x 1
+    Eigen::VectorXi label(bot.Fs.rows());//10 x 1
     Eigen::MatrixXd R = Eigen::MatrixXd::Zero(bot.Fs.rows(), model.mu.cols());//10 x 1
     mixGaussPred_gmm(bot.Fs.transpose(), model, label, R);
 
@@ -93,14 +107,7 @@ void gmm_pred_wafr(Eigen::MatrixXd Xtest, Eigen::MatrixXd Ftest, BOTS bot, GTDat
     Eigen::MatrixXd rms = Eigen::MatrixXd::Zero(1, gt_data.num_gau);//1 x 3
 
     for(int ijk = 0; ijk < gt_data.num_gau; ijk++){
-        Eigen::VectorXi ind_train;
-        int k = 0;
-        for(int i = 0; i < label.size(); i++){
-            if(label(i) == ijk){
-                ind_train(k) = i;
-                k = k + 1;
-            }
-        }
+        Eigen::VectorXi ind_train = get_label_idx(label, ijk);
         Eigen::VectorXd mu_vec(Ftest.rows());
         Eigen::VectorXd s2_vec(Ftest.rows());
         gpml_rms(ind_train, extract_rows(gt_data.Xss, bot.Nm_ind), bot.Fs, Xtest, mu_vec, s2_vec);
@@ -116,7 +123,13 @@ void gmm_pred_wafr(Eigen::MatrixXd Xtest, Eigen::MatrixXd Ftest, BOTS bot, GTDat
  */
 
     Eigen::MatrixXd pred_mu_mat = mu;//202 x 3
-    Eigen::MatrixXd PP_out_tmp = PP_out.array() * (1 - pred_mu_mat.array().isNaN());
+    Eigen::MatrixXd pred_mu_mat_tmp(mu.rows(),mu.cols());
+    for(int i = 0; i < PP_out.rows(); i++){
+        for(int j = 0; j < PP_out.cols(); j++ ){
+            pred_mu_mat_tmp(i,j) = 1 - pred_mu_mat.array().isNaN()(i,j);
+        }
+    }
+    Eigen ::MatrixXd PP_out_tmp = PP_out.array() * pred_mu_mat_tmp.array();
     Eigen::MatrixXd norm_PP_out(PP_out_tmp.rows(), PP_out_tmp.cols());
     for(int i = 0; i < norm_PP_out.rows(); i++){
         norm_PP_out.row(i) = PP_out_tmp.row(i).array()/PP_out_tmp.row(i).sum();
@@ -132,13 +145,12 @@ void gmm_pred_wafr(Eigen::MatrixXd Xtest, Eigen::MatrixXd Ftest, BOTS bot, GTDat
     Eigen::MatrixXd pred_s2_mat = s2;
 
     Eigen::MatrixXd muu_pp_rep = repmat(muu_pp, gt_data.num_gau);//202 x 3
-    pred_s2_mat = s2 + (pred_mu_mat - muu_pp_rep).array() * (pred_mu_mat - muu_pp_rep).array();
+    pred_s2_mat = (pred_mu_mat - muu_pp_rep).array() * (pred_mu_mat - muu_pp_rep).array();
+    pred_s2_mat = pred_s2_mat + s2;
     Eigen::VectorXd s2_pp = (PP_out.array() * pred_s2_mat.array()).rowwise().sum();
 
     pred_h = muu_pp;//202 x 1
     pred_Var = s2_pp;//202 x 1
 }
-
-
 
 #endif

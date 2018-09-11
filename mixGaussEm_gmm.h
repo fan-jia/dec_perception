@@ -4,17 +4,13 @@
 
 #include <iostream>
 #include <math.h>
-#include <unordered_map>
 #include <numeric>
 #include <vector>
 #include <limits>
 #include <algorithm>
-#include <eigen3/Eigen/Dense>
+#include <Eigen/Dense>
 #include <time.h>
 #include <stdlib.h>
-#include <ctime>
-#include <ctype.h>
-#include <cstdlib>
 using namespace std;
 
 struct Model{
@@ -34,9 +30,9 @@ struct GTData{
 };
 
 struct PACKETS{
-    Eigen::VectorXd alpha_K;
-    Eigen::VectorXd belta_K;
-    Eigen::VectorXd gamma_K;
+    Eigen::MatrixXd alpha_K;
+    Eigen::MatrixXd belta_K;
+    Eigen::MatrixXd gamma_K;
 };
 
 struct BOTS{
@@ -55,7 +51,7 @@ struct BOTS{
     Eigen::MatrixXd mu_K;
     Eigen::MatrixXd Sigma_K;
     vector<PACKETS> packets;
-    Eigen::VectorXi neighbor;
+    vector<int> neighbor;
 };
 
 Eigen::MatrixXd pdist2(Eigen::MatrixXd Xtest, Eigen::MatrixXd Xs){
@@ -90,35 +86,7 @@ Eigen::VectorXi get_idx(Eigen::MatrixXd Xtest, Eigen::MatrixXd Xs){
     return idx;
 }
 
-Eigen::VectorXi powercellidx(Eigen::MatrixXd g, Eigen::MatrixXd s){
-/*
- * Input:
- *      g: 2 x 3, s: 2 x 945
- * Output:
- *      idx: 945 x 1
- */
 
-    Eigen::MatrixXd Distance = pdist2(s.transpose(), g.transpose());//945 x 3
-    Eigen::VectorXi idx(s.cols());//945 x 1
-    Eigen::MatrixXd::Index min_index;
-    for(int i = 0; i < idx.size(); i++){
-        Distance.row(i).minCoeff(&min_index);
-        idx(i) = min_index;
-    }
-    return idx;
-}
-
-vector<BOTS> transmitPacket(vector<BOTS> bots, int n){
-    int num_bot = bots.size();
-    for(int j = 0; j < num_bot; j++){
-        for(int i = 0; i < bots[n].neighbor.size(); i++){
-            if(j == bots[n].neighbor(i)){
-                bots[j].packets[n] = bots[n].packets[n];
-            }
-        }
-    }
-    return bots;
-}
 
 Eigen::MatrixXd norm_prob(Eigen::MatrixXd X){
 /*
@@ -240,7 +208,7 @@ vector<int> sort_indexes(Eigen::MatrixXd &v) {
     return idx;
 }
 
-void mixGaussEm_gmm(Eigen::MatrixXd X, int init, Eigen::VectorXd &label, Model &model){
+void mixGaussEm_gmm(Eigen::MatrixXd X, int init, Eigen::VectorXi &label, Model &model){
 /*Perform EM algorithm for fitting the Gaussian mixture model
  *Output: label: 1 x 945 cluster label
  * model: trained model structure
@@ -287,7 +255,7 @@ void mixGaussEm_gmm(Eigen::MatrixXd X, int init, Eigen::VectorXd &label, Model &
         model.Sigma(0,i) = Sigma_temp[i];
         model.w(0,i) = w_temp[i];
     }
-    Eigen::VectorXd back_label = Eigen::VectorXd::Zero(label.size());
+    Eigen::VectorXi back_label = Eigen::VectorXi::Zero(label.size());
     for(int iij = 0; iij < R.cols(); iij++){
         for(int i = 0; i < label.size(); i++){
             if(label[i] == iij){
@@ -305,7 +273,7 @@ void mixGaussEm_gmm(Eigen::MatrixXd X, int init, Eigen::VectorXd &label, Model &
     R = R_temp;
 }
 
-void mixGaussPred_gmm(Eigen::MatrixXd X, Model model, Eigen::VectorXd &label, Eigen::MatrixXd &R){
+void mixGaussPred_gmm(Eigen::MatrixXd X, Model model, Eigen::VectorXi &label, Eigen::MatrixXd &R){
 /* Predict label and responsibility for Gaussian mixture model.
  * Input:
  *      X: d x n data matrix
@@ -341,77 +309,6 @@ void mixGaussPred_gmm(Eigen::MatrixXd X, Model model, Eigen::VectorXd &label, Ei
         R.row(i).maxCoeff(&max_index);
         label(i) = max_index;//Eigen::VectorXd label(X.cols());
     }
-}
-
-vector<BOTS> updateBotComputations(vector<BOTS> bots, int n, Eigen::MatrixXd Fss, double eta){
-    int num_gau = bots[n].alpha_K.cols();
-    Model model;
-    model.mu = bots[n].mu_K;
-    model.Sigma = bots[n].Sigma_K;
-    model.w = norm_prob(bots[n].alpha_K);//norm to 0~1
-
-    Eigen::VectorXd label(bots[n].Fs.rows());
-    Eigen::MatrixXd alpha_mnk = Eigen::MatrixXd::Zero(bots[n].Fs.rows(), model.mu.cols());//10 x 3
-    mixGaussPred_gmm(bots[n].Fs.transpose(), model, label, alpha_mnk);
-    bots[n].self_alpha = alpha_mnk.colwise().sum();// 1 x 3, get self_alpha
-
-    Eigen::MatrixXd temp(alpha_mnk.rows(),alpha_mnk.cols());// 10 x 3
-    for(int i = 0; i < temp.cols(); i++){
-        temp.col(i) = alpha_mnk.col(i).array() * bots[n].Fs.array();
-    }
-    bots[n].self_belta = temp.colwise().sum();// 1 x 3, get self_belta
-
-    Eigen::MatrixXd temp1(alpha_mnk.rows(),alpha_mnk.cols());
-    for(int i = 0; i < temp1.cols(); i++){
-        temp1.col(i) = bots[n].Fs.col(0).array() - model.mu(0,i);
-    }
-    temp1 = temp1.array() * temp1.array();
-    temp1 = temp1.array() * alpha_mnk.array();
-    bots[n].self_gamma = temp1.colwise().sum();// 1 x 3, get self_gamma
-
-/*
- * after compute local summary stats, we update estimate of global stats using packets
- */
-
-    int num_neighbor = bots[n].neighbor.size();
-
-/*
- * start consensus based dynamic estimation process
- */
-    Eigen::MatrixXd stack_alpha_neighbor(bots[n].neighbor.size(), num_gau);
-    Eigen::MatrixXd stack_belta_neighbor(bots[n].neighbor.size(), num_gau);
-    Eigen::MatrixXd stack_gamma_neighbor(bots[n].neighbor.size(), num_gau);
-    for(int i = 0; i < bots[n].neighbor.size(); i++){
-        stack_alpha_neighbor.row(i) = bots[n].packets[bots[n].neighbor(i)].alpha_K;// 1 x 3
-        stack_belta_neighbor.row(i) = bots[n].packets[bots[n].neighbor(i)].belta_K;// 1 x 3
-        stack_gamma_neighbor.row(i) = bots[n].packets[bots[n].neighbor(i)].gamma_K;// 1 x 3
-    }
-
-    Eigen::MatrixXd diff_alpha(bots[n].neighbor.size(), num_gau);
-    Eigen::MatrixXd diff_belta(bots[n].neighbor.size(), num_gau);
-    Eigen::MatrixXd diff_gamma(bots[n].neighbor.size(), num_gau);
-
-    for(int i = 0; i < diff_alpha.rows(); i++){
-        diff_alpha.row(i) = stack_alpha_neighbor.row(i) - bots[n].alpha_K;
-        diff_belta.row(i) = stack_belta_neighbor.row(i) - bots[n].belta_K;
-        diff_gamma.row(i) = stack_gamma_neighbor.row(i) - bots[n].gamma_K;
-    }
-    bots[n].dot_alpha_K = diff_alpha.colwise().sum() + bots[n].self_alpha - bots[n].alpha_K;
-    bots[n].dot_belta_K = diff_belta.colwise().sum() + bots[n].self_belta - bots[n].belta_K;
-    bots[n].dot_gamma_K = diff_gamma.colwise().sum() + bots[n].self_gamma - bots[n].gamma_K;
-
-    bots[n].alpha_K = bots[n].alpha_K + eta * bots[n].dot_alpha_K;
-    bots[n].belta_K = bots[n].belta_K + eta * bots[n].dot_belta_K;
-    bots[n].gamma_K = bots[n].gamma_K + eta * bots[n].dot_gamma_K;//all is 1 x 3
-
-    bots[n].Sigma_K = bots[n].alpha_K.array().inverse().array() * bots[n].gamma_K.array();
-    bots[n].mu_K = bots[n].alpha_K.array().inverse().array() * bots[n].belta_K.array();
-
-    bots[n].packets[n].alpha_K = bots[n].alpha_K;
-    bots[n].packets[n].belta_K = bots[n].belta_K;
-    bots[n].packets[n].gamma_K = bots[n].gamma_K;
-
-    return bots;
 }
 
 #endif
