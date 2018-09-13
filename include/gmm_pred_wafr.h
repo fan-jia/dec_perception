@@ -38,11 +38,11 @@ Eigen::VectorXi get_label_idx(Eigen::VectorXi k, int iij){
             idx_vec.push_back(i);
         }
     }
-    Eigen::VectorXi idx(idx_vec.size());
-    for(int i = 0; i < idx.size(); i ++){
-        idx(i) = idx_vec[i];
-    }
-    return idx;
+        Eigen::VectorXi idx(idx_vec.size());
+        for(int i = 0; i < idx.size(); i ++){
+            idx(i) = idx_vec[i];
+        }
+        return idx;
 }
 
 Eigen::MatrixXd gt_pred(Eigen::MatrixXd Xs,Eigen::MatrixXd R, Eigen::MatrixXd X_test){
@@ -97,17 +97,25 @@ void gmm_pred_wafr(Eigen::MatrixXd Xtest, Eigen::MatrixXd Ftest, BOTS bot, GTDat
 
     bot.Nm_ind = sort_unique(bot.Nm_ind);
     bot.Fs = extract_rows(gt_data.Fss, bot.Nm_ind);
+    //cout << "sigma is " << model.Sigma << endl;
+    //cout << "mu is " << model.mu << endl;
+    //cout << "w is " << model.w << endl;
+    //cout << "Fs is " << '\n' << bot.Fs << endl;
 
     Eigen::VectorXi label(bot.Fs.rows());//10 x 1
     Eigen::MatrixXd R = Eigen::MatrixXd::Zero(bot.Fs.rows(), model.mu.cols());//10 x 1
     mixGaussPred_gmm(bot.Fs.transpose(), model, label, R);
+    //cout << "label is " << label << endl;
 
     Eigen::MatrixXd mu = Eigen::MatrixXd::Zero(Ftest.rows(), gt_data.num_gau);//202 x 3
     Eigen::MatrixXd s2 = Eigen::MatrixXd::Zero(Ftest.rows(), gt_data.num_gau);//202 x 3
     Eigen::MatrixXd rms = Eigen::MatrixXd::Zero(1, gt_data.num_gau);//1 x 3
 
+
     for(int ijk = 0; ijk < gt_data.num_gau; ijk++){
+        //cout << "I start getting labels." << endl;
         Eigen::VectorXi ind_train = get_label_idx(label, ijk);
+        //cout << "indices train is " << ind_train << endl;
         Eigen::VectorXd mu_vec(Ftest.rows());
         Eigen::VectorXd s2_vec(Ftest.rows());
         gpml_rms(ind_train, extract_rows(gt_data.Xss, bot.Nm_ind), bot.Fs, Xtest, mu_vec, s2_vec);

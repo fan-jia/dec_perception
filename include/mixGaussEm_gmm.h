@@ -99,6 +99,7 @@ Eigen::MatrixXd norm_prob(Eigen::MatrixXd X){
 Eigen::MatrixXd initialization(Eigen::MatrixXd X, int init){
     int n = X.cols();
     //random init k
+    srand(50);
     if(sizeof(n) == 4){
         int k = init;
         Eigen::MatrixXd A = Eigen::MatrixXd::Random(1,n).array().abs() * k;
